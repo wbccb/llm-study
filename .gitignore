@@ -31,3 +31,7 @@ temp.*
 
 TOTD.md
 **/TODO.md
+
+
+.vitepress/cache
+.vitepress/dist
