@@ -1,0 +1,1 @@
+import{_ as e,c as t,o as a}from"./chunks/framework.OqxnQCTf.js";const m=JSON.parse('{"title":"","description":"","frontmatter":{},"headers":[],"relativePath":"docs/深度学习/李宏毅/1.了解线性模型.md","filePath":"docs/深度学习/李宏毅/1.了解线性模型.md"}'),o={name:"docs/深度学习/李宏毅/1.了解线性模型.md"};function s(_,c,r,n,d,p){return a(),t("div")}const f=e(o,[["render",s]]);export{m as __pageData,f as default};
