@@ -7,7 +7,7 @@ export default defineConfig({
   description: "",
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
-    nav: [{text: "Home", link: "https://github.com/wbccb"}],
+    nav: [{text: "Home", link: "https://github.com/wbccb/llm-study"}],
 
     sidebar: [
       {
@@ -34,6 +34,6 @@ export default defineConfig({
     socialLinks: [{icon: "github", link: "https://github.com/wbccb"}],
   },
   rewrites: {
-		"/index.md": "/docs/python/1.基础知识.md"
-	}
+    "/index.md": "/docs/python/1.基础知识.md"
+  }
 });
