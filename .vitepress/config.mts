@@ -20,12 +20,26 @@ export default defineConfig({
         text: "深度学习-李宏毅",
         items: [
           {
-            text: "了解线性模型",
-            link: "/docs/深度学习/李宏毅/1.了解线性模型",
+            text: "2021年 & 2022年",
+            items: [
+              {
+                text: "了解线性模型",
+                link: "docs/深度学习/李宏毅/2021年&2022年/1.了解线性模型.md",
+              },
+              {
+                text: "机器学习框架",
+                link: "docs/深度学习/李宏毅/2021年&2022年/2.机器学习框架.md",
+              },
+            ]
           },
           {
-            text: "机器学习框架",
-            link: "/docs/深度学习/李宏毅/2.机器学习框架",
+            text: "2023年",
+            items: [
+              {
+                text: "chatGPT",
+                link: "docs/深度学习/李宏毅/2023年/1.chatGPT.md",
+              },
+            ]
           },
         ],
       },
