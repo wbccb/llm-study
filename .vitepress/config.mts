@@ -39,6 +39,18 @@ export default defineConfig({
                 text: "chatGPT",
                 link: "docs/深度学习/李宏毅/2023年&2024年/1.chatGPT.md",
               },
+              {
+                text: "生成式AI",
+                link: "docs/深度学习/李宏毅/2023年&2024年/2.生成式AI.md",
+              },
+              {
+                text: "不训练模型=>强化模型",
+                link: "docs/深度学习/李宏毅/2023年&2024年/3.不训练模型=>强化模型.md",
+              },
+              {
+                text: "训练模型步骤",
+                link: "docs/深度学习/李宏毅/2023年&2024年/4.训练模型步骤.md",
+              },
             ]
           },
         ],
