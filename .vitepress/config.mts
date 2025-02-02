@@ -33,11 +33,11 @@ export default defineConfig({
             ]
           },
           {
-            text: "2023年",
+            text: "2023年&2024年",
             items: [
               {
                 text: "chatGPT",
-                link: "docs/深度学习/李宏毅/2023年/1.chatGPT.md",
+                link: "docs/深度学习/李宏毅/2023年&2024年/1.chatGPT.md",
               },
             ]
           },
