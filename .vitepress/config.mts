@@ -63,6 +63,10 @@ export default defineConfig({
                 text: "生成策略",
                 link: "docs/深度学习/李宏毅/2023年&2024年/7.生成策略.md",
               },
+              {
+                text: "Video相关的生成式AI技术",
+                link: "docs/深度学习/李宏毅/2023年&2024年/8.Video相关的生成式AI技术.md",
+              },
             ]
           },
         ],
