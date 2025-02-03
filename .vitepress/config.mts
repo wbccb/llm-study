@@ -51,6 +51,18 @@ export default defineConfig({
                 text: "训练模型步骤",
                 link: "docs/深度学习/李宏毅/2023年&2024年/4.训练模型步骤.md",
               },
+              {
+                text: "Transformer",
+                link: "docs/深度学习/李宏毅/2023年&2024年/5.Transformer.md",
+              },
+              {
+                text: "评估模型能力&模型的安全性",
+                link: "docs/深度学习/李宏毅/2023年&2024年/6.评估模型能力&模型的安全性.md",
+              },
+              {
+                text: "生成策略",
+                link: "docs/深度学习/李宏毅/2023年&2024年/7.生成策略.md",
+              },
             ]
           },
         ],
