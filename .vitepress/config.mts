@@ -17,6 +17,13 @@ export default defineConfig({
         ],
       },
       {
+        text: "深度学习",
+        items: [
+          {text: "基本概念", link: "/docs/深度学习/基本概念.md"},
+          {text: "DeepSeek", link: "/docs/深度学习/主流大模型原理/DeepSeek.md"},
+        ],
+      },
+      {
         text: "深度学习-李宏毅",
         items: [
           {
@@ -69,6 +76,12 @@ export default defineConfig({
               },
             ]
           },
+        ],
+      },
+      {
+        text: "知识库",
+        items: [
+          {text: "NLP+大模型=>问答", link: "docs/知识库/NLP+大模型=>问答.md"},
         ],
       },
     ],

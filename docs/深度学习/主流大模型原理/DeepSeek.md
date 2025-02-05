@@ -1,4 +1,4 @@
-> 注：以下内容全部来自`DeepSeek-R1`的回答
+> 注：以下内容全部来自`DeepSeek-R1`和`ChatGPT`的回答
 
 # DeepSeek
 
