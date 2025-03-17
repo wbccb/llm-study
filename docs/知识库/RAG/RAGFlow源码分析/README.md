@@ -20,6 +20,11 @@
 ## 文件上传 & 解析
 
 ### 文件解析
+- OCR识别：`vision/ocr.py`
+- 版面分析: `vision/recognizer.py` 和 `vision/layout_recognizer.py`
+
+OCR和版面分析都是为了 parser 服务
+
 > api/db/services/task_service.py：实际文件解析
 
 根据不同类型设置单个任务最多处理的页数

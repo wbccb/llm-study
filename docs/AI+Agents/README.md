@@ -27,7 +27,7 @@ AI Agent = LLM（大模型） + Planning（规划） + Memory（记忆） + Tool
 
 
 我们可以将一个RAG的应用抽象为下图的5个过程：
-![img.png](img.png)
+![img.png](images/img1.png)
 
 # 参考
 1. https://waytoagi.feishu.cn/wiki/CT3UwDM8OiVmOOkohPbcV3JCndb
