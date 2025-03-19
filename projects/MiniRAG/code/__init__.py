@@ -9,6 +9,10 @@ import chromadb
 from datetime import datetime
 import os
 import logging
+from pdfminer.high_level import extract_text_to_fp
+from io import StringIO
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+import time
 
 
 # 添加重试次数
@@ -25,6 +29,13 @@ CHROMA_CLIENT = chromadb.PersistentClient(
 )
 ## 向量数据库->获取对应的集合
 COLLECTION = CHROMA_CLIENT.get_or_create_collection("rag_docs")
+
+## langchain文本切割
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=400,
+    chunk_overlap=40,
+    separators=["\n\n", "\n", "。", "，", "；", "：", " ", ""]  # 按自然语言结构分割
+)
 
 # 修改布局部分，添加一个新的标签页
 with gr.Blocks(
@@ -622,8 +633,38 @@ class FileProcessor:
 file_processor = FileProcessor()
 
 
-def extract_text(filepath):
+class BM25IndexManager:
+    def __init__(self):
 
+
+BM25_MANAGER = BM25IndexManager()
+
+# 上传文件后进行【文档的索引更新】
+def update_bm25_index():
+    try:
+        ## 获取所有文档
+        all_docs = COLLECTION.get(include=["documents", "metadatas"])
+
+        if not all_docs or not all_docs["documents"]:
+            logging.warning("没有可索引的文档")
+            BM25_MANAGER.clear()
+            return False
+
+        doc_ids = [f"{meta.get('doc_id', 'unknown')}_{idx}" for idx, meta in enumerate(all_docs["metadatas"])]
+        BM25_MANAGER.build_index(all_docs["documents"], doc_ids)
+        logging.info(f"BM25索引更新完成，共索引 {len(doc_ids)} 个文档")
+        return True
+
+    except Exception as e:
+        logging.error(f"更新BM25索引失败: {str(e)}")
+        return False
+
+
+def extract_text(filepath):
+    output = StringIO()
+    with open(filepath, "rb") as file:
+        extract_text_to_fp(file, output)
+    return output.getvalue()
 
 
 # 文档处理流程-PDF解析与分块
@@ -638,16 +679,37 @@ def process_multiple_pdfs(files, progress=gr.Progress()):
         try:
             # 可视化展示目前处理文件名称
             file_name = os.path.basename(file)
+            progress((idx-1)/total_files, desc=f"处理文件 {idx/total_files}:{file_name}")
 
-            # 添加文件到处理器 + 提取该文件内容
+            # 添加文件到文件管理类中 + 提取该文件内容
+            file_processor.add_file(file_name)
 
             # 对提取的内容进行分割为chunks
+            text = extract_text(file.name)
+            chunks = text_splitter.split_text(text)
+
+            if not chunks:
+                raise ValueError("文档内容为空/无法提取文本")
 
             # 使用all-MIniLM-L6-v2将chunks->向量Text Embeddings
+            doc_id = f"doc_{int(time.time())}_{idx}"
+            embeddings = EMBED_MODEL.encode(chunks)
 
-            # 将生成的向量以及对应的文档数据存入到chromadb
+            # 将生成的向量数组chunks以及对应的文档数据存入到chromadb
+            ids = [f"{doc_id}_chunk_{i}" for i in range(len(chunks))]
+            metadatas = [{"source": file_name, "doc_id": doc_id} for _ in chunks]
+
+            COLLECTION.add(
+                ids=ids,
+                embeddings=embeddings.tolist(),
+                documents=chunks,
+                metadatas=metadatas
+            )
 
             # 更新当前UI的处理状态
+            total_chunks += len(chunks)
+            file_processor.update_status(file_name, "处理完成", len(chunks))
+            processed_results.append(f"✅{file_name}: 成功处理 {len(chunks)} 个文本块")
 
         except Exception as e:
             error_msg = str(e)
@@ -656,8 +718,12 @@ def process_multiple_pdfs(files, progress=gr.Progress()):
             processed_results.append(f"❌ {file_name}: 处理失败 - {error_msg}")
 
     # 遍历完成，进行信息的总结
+    summary = f"\n总计处理 {total_files} 个文件，{total_chunks} 个文本块"
+    processed_results.append(summary)
 
     # 更新BM25的索引：可以根据这个索引得到 query与各个文档之间的相关性
+    progress(0.95, desc="构建BM25检索索引...")
+    update_bm25_index()
 
     # 获取更新状态后的文件列表（每一个文件都更新了对应的状态)
     file_list = file_processor.get_file_list()
