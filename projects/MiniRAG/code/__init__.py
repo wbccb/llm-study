@@ -1,11 +1,30 @@
 import socket
+from logging import exception
+
 import gradio as gr
 import webbrowser
 import requests
+from sentence_transformers import SentenceTransformer
+import chromadb
+from datetime import datetime
+import os
+import logging
+
 
 # 添加重试次数
 requests.adapters.DEFAULT_RETRIES = 3  # 增加重试次数
 session = requests.Session()
+
+
+# LLM->生成Text Embeddings
+EMBED_MODEL = SentenceTransformer("all-MIniLM-L6-v2")
+# 向量数据库
+CHROMA_CLIENT = chromadb.PersistentClient(
+    path="./chroma_db",
+    settings=chromadb.Settings(anonymized_telemetry=False)
+)
+## 向量数据库->获取对应的集合
+COLLECTION = CHROMA_CLIENT.get_or_create_collection("rag_docs")
 
 # 修改布局部分，添加一个新的标签页
 with gr.Blocks(
@@ -570,6 +589,83 @@ document.addEventListener('DOMContentLoaded', () => {
     document.documentElement.setAttribute('data-theme', 'dark');
 });
 """
+
+
+# 文件状态处理管理类
+class FileProcessor:
+    def __init__(self):
+        self.processed_files = {}
+
+    def clear_files(self):
+        self.processed_files = {}
+
+    def add_file(self, file_name):
+        self.processed_files[file_name] = {
+            "status": "等待处理",
+            "tiemstamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "chunks": 0
+        }
+
+    def update_status(self, file_name, status, chunks=None):
+        if file_name in self.processed_files:
+            self.processed_files[file_name]["status"] = status
+            if chunks is not None:
+                self.processed_files[file_name]["chunks"] = chunks
+
+    def get_file_list(self):
+        # 语法，注意两行之间是没有逗号的
+        return [
+            f"{fname} | {info['status']}"
+            for fname, info in self.processed_files.items()
+        ]
+
+file_processor = FileProcessor()
+
+
+def extract_text(filepath):
+
+
+
+# 文档处理流程-PDF解析与分块
+def process_multiple_pdfs(files, progress=gr.Progress()):
+    # 开始清理旧的数据
+    # 处理目前上传的所有数据files
+    total_files = len(files)
+    processed_results = []
+    total_chunks = 0
+
+    for idx, file in enumerate(files, 1):
+        try:
+            # 可视化展示目前处理文件名称
+            file_name = os.path.basename(file)
+
+            # 添加文件到处理器 + 提取该文件内容
+
+            # 对提取的内容进行分割为chunks
+
+            # 使用all-MIniLM-L6-v2将chunks->向量Text Embeddings
+
+            # 将生成的向量以及对应的文档数据存入到chromadb
+
+            # 更新当前UI的处理状态
+
+        except Exception as e:
+            error_msg = str(e)
+            logging.error(f"处理文件 {file_name}时出错：{error_msg}")
+            file_processor.update_status(file_name, f"处理失败: {error_msg}")
+            processed_results.append(f"❌ {file_name}: 处理失败 - {error_msg}")
+
+    # 遍历完成，进行信息的总结
+
+    # 更新BM25的索引：可以根据这个索引得到 query与各个文档之间的相关性
+
+    # 获取更新状态后的文件列表（每一个文件都更新了对应的状态)
+    file_list = file_processor.get_file_list()
+
+    # 返回处理过程的打印信息
+    return "\n".join(processed_results), file_list
+
+
 
 
 
