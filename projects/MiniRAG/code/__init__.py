@@ -607,6 +607,28 @@ document.addEventListener('DOMContentLoaded', () => {
 """
 
 
+# chat聊天框处理逻辑
+# 改进的流式问答处理流程，支持联网搜索、混合检索、重排序
+def stream_answer(question, enable_web_search=False, model_choice="ollama", progress=gr.Progress()):
+    # 1.检查知识库是否为空，也就是向量数据库是否为空
+
+    # 2.使用递归搜索获取更加全面的答案上下文
+
+    # 3.组合上下文，包括来源信息
+    ## 使用检索到的数据
+    ## 检测搜索的结构是否存在矛盾，也就是有的数据说1+1=2；有的说1+1=3
+    ## 如果存在矛盾，则进行数据
+
+    ## 上下文添加query时间敏感检测
+    ## 改进提示词模板，提高回答质量
+
+
+    # 4.根据本地模型还是线上模式进行不同API的选择
+    # 5.检测答案是否包含thinking，构建思考链数据展示
+
+    # 6.输出最终答案=>显示在界面上
+
+
 # 文件状态处理管理类
 class FileProcessor:
     def __init__(self):
