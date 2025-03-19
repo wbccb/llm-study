@@ -610,9 +610,25 @@ document.addEventListener('DOMContentLoaded', () => {
 # chat聊天框处理逻辑
 # 改进的流式问答处理流程，支持联网搜索、混合检索、重排序
 def stream_answer(question, enable_web_search=False, model_choice="ollama", progress=gr.Progress()):
+    try:
     # 1.检查知识库是否为空，也就是向量数据库是否为空
+        try:
+            collect_data = COLLECTION.get(include=["documents"])
+            if not collect_data or not collect_data.get("documents") or len(collect_data.get("documents")) == 0:
+                if not enable_web_search:
+                    yield "⚠️ 知识库为空，请先上传文档。", "遇到错误"
+                    return
+                else:
+                    logging.warning("知识库为空，将仅使用网络搜索结果")
+        except Exception as e:
+            if not enable_web_search:
+                yield f"⚠️ 检查知识库时出错: {str(e)}，请确保已上传文档。", "遇到错误"
+                return
+            logging.error(f"检查知识库时出错: {str(e)}")
 
+    progress(0.3, desc="执行递归检索...")
     # 2.使用递归搜索获取更加全面的答案上下文
+
 
     # 3.组合上下文，包括来源信息
     ## 使用检索到的数据
@@ -622,11 +638,57 @@ def stream_answer(question, enable_web_search=False, model_choice="ollama", prog
     ## 上下文添加query时间敏感检测
     ## 改进提示词模板，提高回答质量
 
-
     # 4.根据本地模型还是线上模式进行不同API的选择
     # 5.检测答案是否包含thinking，构建思考链数据展示
 
     # 6.输出最终答案=>显示在界面上
+
+    except Exception as e:
+        yield f"系统错误: {str(e)}", "遇到错误"
+
+
+
+def recursive_retrieval(initial_query, max_iterations=3, enable_web_search=False, model_choice="ollama"):
+    """
+    实现递归检索与迭代查询功能
+    通过分析当前查询结果，确定是否需要进一步查询
+
+    :param initial_query: 初始查询的字符串
+    :param max_iterations: 最大迭代次数
+    :param enable_web_search: 是否启用网络搜索
+    :param model_choice: 使用的模型（本地或者在线）
+    :return:
+        包含所有检索内容的列表
+    """
+
+    query = initial_query
+    all_contexts = []
+    all_doc_ids = []
+    all_metadata = []
+
+    for i in range(max_iterations):
+        logging.info(f"递归检索迭代 {i + 1}/{max_iterations}，当前查询: {query}")
+
+        # 如果启动了网络查询，先进行网络搜索
+
+        # query -> embedding
+
+        # query embedding 与 向量数据库 比对，获取对应的语义分析结果
+
+        # BM25关键词检索
+
+        # 混合检索结果处理：query embedding 与 向量数据库 比对 + BM25关键词检索
+
+        # 对拿到的结果进行重排序
+
+        # 收集当前最新结果到迭代结果数据集
+
+        # 使用LLM分析是否需要进一步查询：直接问LLM=>分析是否需要进一步查询。如果需要，请提供新的查询问题，使用不同角度或更具体的关键词。如果已经有充分信息，请回复'不需要进一步查询'
+        ## 不需要=>结束迭代检索
+        ## 需要=>更新query
+
+
+    return all_contexts, all_doc_ids, all_metadata
 
 
 # 文件状态处理管理类
