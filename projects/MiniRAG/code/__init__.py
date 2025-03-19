@@ -3,6 +3,8 @@ from logging import exception
 
 import gradio as gr
 import webbrowser
+
+import jieba
 import requests
 from sentence_transformers import SentenceTransformer
 import chromadb
@@ -13,6 +15,9 @@ from pdfminer.high_level import extract_text_to_fp
 from io import StringIO
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import time
+
+from rank_bm25 import BM25Okapi
+import numpy as np
 
 
 # 添加重试次数
@@ -635,6 +640,38 @@ file_processor = FileProcessor()
 
 class BM25IndexManager:
     def __init__(self):
+        self.bm25_index = None
+        self.doc_mapping = {}
+        self.tokenized_corpus = []
+        self.raw_corpus = []
+
+    def build_index(self, documents, doc_ids):
+        self.raw_corpus = documents
+        self.doc_mapping = {i: doc_id for i, doc_id in enumerate(doc_ids)}
+
+        self.tokenized_corpus = []
+        """
+         tokenized_corpus = [
+            ["猫", "是", "一种", "动物"],  # 文档1的分词结果
+            ["狗", "是", "人类", "朋友"],  # 文档2的分词结果
+            ...
+        ]
+        """
+        for doc in documents:
+            tokens = list(jieba.cut(doc))
+            self.tokenized_corpus.append(tokens)
+
+        # 创建BM25索引
+        self.bm25_index = BM25Okapi(self.tokenized_corpus)
+        return True
+
+    def search(self, query, top_k=5):
+
+    def clear(self):
+        self.bm25_index = None
+        self.doc_mapping = {}
+        self.tokenized_corpus = []
+        self.raw_corpus = []
 
 
 BM25_MANAGER = BM25IndexManager()
