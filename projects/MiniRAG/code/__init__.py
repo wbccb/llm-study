@@ -1170,13 +1170,75 @@ def recursive_retrieval(initial_query, max_iterations=3, enable_web_search=False
             reranked_results = []
 
 
-        # 收集当前最新结果到迭代结果数据集，判断是不是最后一次迭代，如果是最后一次迭代，则结束循环
+        # 重排序后->收集当前最新结果到迭代结果数据集，判断是不是最后一次迭代，如果是最后一次迭代，则结束循环
+        current_contexts = []
+        for doc_id, result_data in reranked_results:
+            doc = result_data["content"]
+            metadata = result_data["metadata"]
+
+            # 添加到总的结果集中
+            if doc_id not in all_doc_ids:
+                all_doc_ids.append(doc_id)
+                all_contexts.append(doc)
+                all_metadata.append(metadata)
+                current_contexts.append(doc)
+
+        if i == max_iterations - 1:
+            break
 
 
         # 使用LLM分析是否需要进一步查询：直接问LLM=>分析是否需要进一步查询。如果需要，请提供新的查询问题，使用不同角度或更具体的关键词。如果已经有充分信息，请回复'不需要进一步查询'
         ## 不需要=>结束迭代检索
         ## 需要=>更新query => 继续循环
+        if current_contexts:
+            # 拼接 prompt
+            current_summary = "\n".join(current_contexts[:3]) if current_contexts else "未找到相关信息"
 
+            next_query_prompt = f"""基于原始问题: {initial_query}
+            以及已检索信息: 
+            {current_summary}
+
+            分析是否需要进一步查询。如果需要，请提供新的查询问题，使用不同角度或更具体的关键词。
+            如果已经有充分信息，请回复'不需要进一步查询'。
+
+            新查询(如果需要):"""
+            try:
+                if model_choice == "siliconflow":
+                    logging.info("使用SiliconFlow API分析是否需要进一步查询")
+                    next_query_result = call_siliconflow_api(next_query_prompt, temperature=0.7, max_tokens=256)
+
+                    # 去除可能的思维链标记
+                    if "<think>" in next_query_result:
+                        next_query = next_query_result.split("<think>")[0].strip()
+                    else:
+                        next_query = next_query_result
+                else:
+                    # 使用本地Ollama
+                    logging.info("使用本地Ollama模型分析是否需要进一步查询")
+                    response = session.post(
+                        "http://localhost:11434/api/generate",
+                        json={
+                            "model": "deepseek-r1:1.5b",
+                            "prompt": next_query_prompt,
+                            "stream": False
+                        },
+                        timeout=30
+                    )
+                    next_query = response.json().get("response", "")
+
+                if "不需要" in next_query or "不需要进一步查询" in next_query or len(next_query.strip()) < 5:
+                    logging.info("LLM判断不需要进一步查询，结束递归检索")
+                    break
+
+                # 使用新查询继续迭代
+                query = next_query
+                logging.info(f"生成新查询: {query}")
+            except Exception as e:
+                logging.error(f"生成新查询时出错: {str(e)}")
+                break
+        else:
+            # 如果当前迭代没有检索到内容，则结束recursive_retrieval()
+            break
 
     return all_contexts, all_doc_ids, all_metadata
 
