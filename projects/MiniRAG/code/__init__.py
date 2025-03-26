@@ -25,6 +25,8 @@ import requests
 from requests.adapters import HTTPAdapter
 import hashlib
 
+from functools import lru_cache
+import re
 
 
 # 加载环境变量
@@ -32,7 +34,8 @@ load_dotenv()
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 
 SEARCH_ENGINE = "google"  # 可根据需要改为其他搜索引擎
-
+# 新增：重排序方法配置（交叉编码器或LLM）
+RERANK_METHOD = os.getenv("RERANK_METHOD", "cross_encoder")
 
 # 添加重试次数
 requests.adapters.DEFAULT_RETRIES = 3  # 增加重试次数
@@ -823,6 +826,133 @@ def hybrid_merge(semantic_results, bm25_results, alpha=0.7):
 
     return merged_dict
 
+
+def rerank_results(query, docs, doc_ids, metadata_list, method=None, top_k=5):
+    """
+    对检索结果进行重新排序
+
+    :param query: 查询字符串
+    :param docs: 文档内容列表
+    :param doc_ids: 文档ids列表
+    :param metadata_list: 元数据列表
+    :param method: 重排序方法("cross_encoder", "llm"或者None)
+    :param top_k: 返回结果的数量
+    :return:
+        重排序后的结果列表
+    """
+    if method is None:
+        method = RERANK_METHOD
+
+    # 根据方法选择重排序函数
+    if method == "llm":
+        return rerank_with_llm(query, docs, doc_ids, metadata_list, top_k)
+    elif method == "cross_encoder":
+        return rerank_with_cross_encoder(query, docs, doc_ids, metadata_list, top_k)
+    else:
+        # 默认不进行重排序，按原始顺序返回
+        return [
+            (doc_id, {"content": doc, "metadata": meta, "score": 1.0 - idx/len(docs)})
+            for idx, (doc_id, doc, meta) in enumerate(zip(doc_ids, docs, metadata_list))
+        ]
+
+def rerank_with_llm(query, docs, doc_ids, metadata_list, top_k=5):
+    """
+    使用LLM对检索结果进行重排序
+
+    :param query: 查询字符串
+    :param docs: 文档内容列表
+    :param doc_ids: 文档ids列表
+    :param metadata_list: 元数据列表
+    :param method: 重排序方法("cross_encoder", "llm"或者None)
+    :param top_k: 返回结果的数量
+    :return:
+        重排序后的结果列表
+    """
+    if not docs:
+        return []
+
+    results = []
+
+    # 对每一个文档进行评分
+    for doc_id, doc, meta in zip(doc_ids, docs, metadata_list):
+        ## 获取LLM评分
+        score = get_llm_relevance_score(query, doc)
+
+        # 添加到结果列表
+        results.append((
+            doc_id,
+            {
+                "content": doc,
+                "metadata": meta,
+                "score": score / 10.0 # 归一化到0-1
+            }
+        ))
+
+    # 按得分排序
+    results = sorted(results, key=lambda x:x[1]["score"], reverse=True)
+
+    # 返回前K个结果
+    return results[:top_k]
+
+# LLM相关性评分函数
+@lru_cache(maxsize=32)
+def get_llm_relevance_score(query, doc):
+    """
+    使用LLM查询和文档的相关性进行评分（带缓存）
+
+    :param query: 字符串
+    :param doc: 文档内容
+
+    :return:
+        相关性得分（0-10）
+    """
+    try:
+        prompt = f"""给定以下查询和文档片段，评估它们的相关性。
+        评分标准：0分表示完全不相关，10分表示高度相关。
+        只需返回一个0-10之间的整数分数，不要有任何其他解释。
+        
+        查询: {query}
+        
+        文档片段: {doc}
+        
+        相关性分数(0-10):"""
+
+        # 调用本地LLM
+        response = session.post(
+            "http://localhost:11434/api/generate",
+            json={
+                "model": "deepseek-r1:1.5b",  # 使用较小模型进行评分
+                "prompt": prompt,
+                "stream": False
+            },
+            timeout=30
+        )
+
+        # 提取得分
+        result = response.json().get("response", "").strip()
+
+        # 尝试解析为数字
+        try:
+            score = float(result)
+            # 确保分数在0-10范围内
+            score = max(0, min(10, score))
+            return score
+        except ValueError:
+            # 如果无法解析为数字，尝试从文本中提取数字
+            match = re.search(r'\b([0-9]|10)\b', result)
+            if match:
+                return float(match.group(1))
+            else:
+                # 默认返回中等相关性
+                return 5.0
+
+    except Exception as e:
+        logging.error(f"LLM评分失败: {str(e)}")
+        return 5.0
+
+
+def rerank_with_cross_encoder(query, docs, doc_ids, metadata_list, top_k=5):
+
 def recursive_retrieval(initial_query, max_iterations=3, enable_web_search=False, model_choice="ollama"):
     """
     实现递归检索与迭代查询功能
@@ -870,12 +1000,35 @@ def recursive_retrieval(initial_query, max_iterations=3, enable_web_search=False
         hybrid_results = hybrid_merge(semantic_results, bm25_results, alpha=0.7)
 
         # 对拿到的结果进行重排序
+        doc_ids = []
+        docs = []
+        metadata_list = []
 
-        # 收集当前最新结果到迭代结果数据集
+        if hybrid_results:
+            for doc_id, result_data in hybrid_results[:10]:
+                doc_ids.append(doc_id)
+                docs.append(result_data["content"])
+                metadata_list.append(result_data["metadata"])
+
+        if docs:
+            try:
+                reranked_results = rerank_results(query, docs, doc_ids, metadata_list, top_k=5)
+            except Exception as e:
+                logging.error(f"重排序错误: {str(e)}")
+                reranked_results = [
+                    (doc_id, {"content": doc, "metadata": metadata_list, "score": 1.0})
+                    for doc_id, doc, meta in zip(doc_ids, docs, metadata_list)
+                ]
+        else:
+            reranked_results = []
+
+
+        # 收集当前最新结果到迭代结果数据集，判断是不是最后一次迭代，如果是最后一次迭代，则结束循环
+
 
         # 使用LLM分析是否需要进一步查询：直接问LLM=>分析是否需要进一步查询。如果需要，请提供新的查询问题，使用不同角度或更具体的关键词。如果已经有充分信息，请回复'不需要进一步查询'
         ## 不需要=>结束迭代检索
-        ## 需要=>更新query
+        ## 需要=>更新query => 继续循环
 
 
     return all_contexts, all_doc_ids, all_metadata
