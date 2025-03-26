@@ -754,7 +754,74 @@ def update_web_results(query: str, num_results: int = 5) -> list:
     COLLECTION.add(ids=ids, embeddings=embeddings.tolist(), documents=docs, metadatas=metadatas)
     return results
 
+def hybrid_merge(semantic_results, bm25_results, alpha=0.7):
+    """
+    合并COLLECTION.query的语义搜索结果+BM25检索结果，其中alpha为语义搜索权重(0-1)
 
+    :param semantic_results: 向量检索结果
+    :param bm25_results: BM25检索结果
+    :param alpha: 语义搜索权重（0-1）
+    :return:
+        合并后的结果列表
+    """
+
+    merged_dict = {}
+
+    # 处理语义搜索结果
+    if (semantic_results and 'documents' in semantic_results and 'metadatas' in semantic_results and
+        semantic_results['documents'] and semantic_results['metadatas'] and
+        len(semantic_results['documents']) > 0 and len(semantic_results['documents'][0]) > 0):
+
+        ## 生成文档ID，使用元数据中的doc_id字段
+        zip_array = zip(semantic_results["documents"][0], semantic_results["metadatas"][0])
+        for i, (doc, meta) in enumerate(zip_array):
+            doc_id = f"{meta.get('doc_id', 'doc')}_{i}"
+            # 归一化分数，避免除以零
+            score = 1.0 - (i / max(1, len(semantic_results["documents"][0])))
+            merged_dict[doc_id] = {
+                "score": alpha * score,
+                "content": doc,
+                "metadata": meta
+            }
+
+    # 处理BM25检索的结果
+    # 如果BM25的结果为空，直接返回语义结果
+    if not bm25_results:
+        ## merged_dict.items(): 通过.items()方法获取键值对的元组列表，形式为 [('key1', {'score':95}), ('key2', {'score':80})]
+        ## lambda x: x[1]['score'] => x[1]获取字典值（第二个元素），['score']提取排序依据的数值
+        return sorted(merged_dict.items(), key=lambda x:x[1]["score"], reverse=True)
+
+
+    # 获取bm25_results中最大的分数的值
+    max_bm25_score = max([r["score"] for r in bm25_results], [1.0])
+    for result in bm25_results:
+        doc_id = result["id"]
+        ## 归一化BM25的分数
+        normalized_score = result["score"] / max_bm25_score if max_bm25_score > 0 else 0
+
+        if doc_id in merged_dict:
+            merged_dict[doc_id]["score"] += (1-alpha) * normalized_score
+        else:
+            metadata = {}
+            try:
+                # 获取元数据（如果有的话）
+                metadata_result = COLLECTION.get(ids=[doc_id], include=["metadatas"])
+                if metadata_result and metadata_result["metadatas"]:
+                    metadata = metadata_result["metadatas"][0]
+            except Exception as e:
+                logging.warning(f"获取文档元数据失败: {str(e)}")
+
+            # 拼接数据，保持与上面merged_dict的数据结构统一
+            merged_dict[doc_id] = {
+                "score": (1-alpha) * normalized_score,
+                "content": result["content"],
+                "metadata": metadata
+            }
+
+    # 按分数排序并且返回结果
+    merged_dict = sorted(merged_dict.items(), key=lambda x:x[1]["score"], reverse=True)
+
+    return merged_dict
 
 def recursive_retrieval(initial_query, max_iterations=3, enable_web_search=False, model_choice="ollama"):
     """
@@ -780,15 +847,27 @@ def recursive_retrieval(initial_query, max_iterations=3, enable_web_search=False
         # 如果启动了网络查询，先进行网络搜索
         web_results = []
         if enable_web_search and check_serpapi_key():
-            web_results = update_web_results(query);
+            web_results = update_web_results(query)
 
         # query -> embedding
+        query_embedding = EMBED_MODEL.encode([query]).tolist()
 
         # query embedding 与 向量数据库 比对，获取对应的语义分析结果
+        try:
+            semantic_results = COLLECTION.query(
+                query_embeddings=query_embedding,
+                n_results=10,
+                include=["documents", "metadatas"]
+            )
+        except Exception as e:
+            logging.error(f"向量检索错误: {str(e)}")
+            semantic_results = {"ids": [[]], "documents": [[]], "metadatas": [[]], "distances": [[]]}
 
         # BM25关键词检索
+        bm25_results = BM25_MANAGER.search(query, top_k=10)
 
         # 混合检索结果处理：query embedding 与 向量数据库 比对 + BM25关键词检索
+        hybrid_results = hybrid_merge(semantic_results, bm25_results, alpha=0.7)
 
         # 对拿到的结果进行重排序
 
@@ -956,6 +1035,8 @@ def process_multiple_pdfs(files, progress=gr.Progress()):
     # 更新BM25的索引：可以根据这个索引得到 query与各个文档之间的相关性
     progress(0.95, desc="构建BM25检索索引...")
     update_bm25_index()
+
+    # 后续我们要利用 COLLECTION的向量对比找出答案（语义搜索） + BM25关键词搜索找出答案
 
     # 获取更新状态后的文件列表（每一个文件都更新了对应的状态)
     file_list = file_processor.get_file_list()
