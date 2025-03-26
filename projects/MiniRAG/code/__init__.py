@@ -1,4 +1,5 @@
 import socket
+import threading
 from imp import SEARCH_ERROR
 from logging import exception
 
@@ -7,7 +8,7 @@ import webbrowser
 
 import jieba
 import requests
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, CrossEncoder
 import chromadb
 from datetime import datetime
 import os
@@ -27,6 +28,8 @@ import hashlib
 
 from functools import lru_cache
 import re
+import threading
+import json
 
 
 # 加载环境变量
@@ -36,6 +39,9 @@ SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 SEARCH_ENGINE = "google"  # 可根据需要改为其他搜索引擎
 # 新增：重排序方法配置（交叉编码器或LLM）
 RERANK_METHOD = os.getenv("RERANK_METHOD", "cross_encoder")
+# 新增：SiliconFlow API配置
+SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "sk-lnflogwkgcgchrztauesjderjgjqmwldwtxwkkfwzcnshbgf")
+SILICONFLOW_API_URL = os.getenv("SILICONFLOW_API_URL", "https://api.siliconflow.cn/v1/chat/completions")
 
 # 添加重试次数
 requests.adapters.DEFAULT_RETRIES = 3  # 增加重试次数
@@ -952,6 +958,147 @@ def get_llm_relevance_score(query, doc):
 
 
 def rerank_with_cross_encoder(query, docs, doc_ids, metadata_list, top_k=5):
+    """
+    使用交叉编码器对检索结果进行重排序
+
+    参数:
+        query: 查询字符串
+        docs: 文档内容列表
+        doc_ids: 文档ID列表
+        metadata_list: 元数据列表
+        top_k: 返回结果数量
+
+    返回:
+        重排序后的结果列表 [(doc_id, {'content': doc, 'metadata': metadata, 'score': score}), ...]
+    """
+    if not docs:
+        return []
+
+    # 获取交叉编码器=>延迟加载交叉编码模型
+    encoder = get_cross_encoder()
+    if encoder is None:
+        logging.warning("交叉编码器不可用，跳过重排序")
+        # 返回原始顺序（按索引排序）
+        return [(doc_id, {'content': doc, 'metadata': meta, 'score': 1.0 - idx / len(docs)})
+                for idx, (doc_id, doc, meta) in enumerate(zip(doc_ids, docs, metadata_list))]
+
+    # 准备交叉编码器输入
+    cross_inputs = [[query, doc] for doc in docs]
+
+    try:
+        # 计算相关性得分
+        scores = encoder.predict(cross_inputs)
+
+        # 组合结果
+        results = [
+            (doc_id, {
+                "content": doc,
+                "metadata": meta,
+                "score": score
+            })
+            for doc_id, doc, meta, score in zip(doc_ids, docs, metadata_list, scores)
+        ]
+
+        # 按照得分排序
+        results = sorted(results, key=lambda x:x[1]["score"], reverse=True)
+
+        return results[:top_k]
+    except Exception as e:
+        logging.error(f"交叉编码器重排序失败: {str(e)}")
+        # 出错时返回原始顺序
+        return [(doc_id, {'content': doc, 'metadata': meta, 'score': 1.0 - idx / len(docs)})
+                for idx, (doc_id, doc, meta) in enumerate(zip(doc_ids, docs, metadata_list))]
+
+
+cross_encoder = None
+cross_encoder_lock = threading.Lock()
+def get_cross_encoder():
+    """延迟加载交叉编码器模型"""
+    global cross_encoder
+    if cross_encoder is None:
+        with cross_encoder_lock:
+            if cross_encoder is None:
+                try:
+                    # 使用多语言交叉编码器，更加适合中文
+                    cross_encoder = CrossEncoder('sentence-transformers/distiluse-base-multilingual-cased-v2')
+                    logging.info("交叉编码器加载成功")
+                except Exception as e:
+                    logging.error(f"加载交叉编码器失败: {str(e)}")
+                    # 设置为None，下次会重新尝试加载一次
+                    cross_encoder = None
+    return cross_encoder
+
+def call_siliconflow_api(prompt, temperature=0.7, max_tokens=1024):
+    """
+    调用SiliconFlow API获取回答
+
+    Args:
+        prompt: 提示词
+        temperature: 温度参数
+        max_tokens: 最大生成token数
+
+    Returns:
+        生成的回答文本和思维链内容
+    """
+    try:
+        payload = {
+            "model": "Pro/deepseek-ai/DeepSeek-R1",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "stream": False,
+            "max_tokens": max_tokens,
+            "stop": None,
+            "temperature": temperature,
+            "top_p": 0.7,
+            "top_k": 50,
+            "frequency_penalty": 0.5,
+            "n": 1,
+            "response_format": {"type": "text"}
+        }
+
+        headers = {
+            "Authorization": f"Bearer {SILICONFLOW_API_KEY}",
+            "Content-Type": "application/json"
+        }
+
+        response = requests.post(
+            SILICONFLOW_API_URL,
+            json=payload,
+            headers=headers,
+            timeout=60
+        )
+
+        response.raise_for_status()
+        result = response.json()
+
+        # 提取回答内容和思维链
+        if "choices" in result and len(result["choices"]) > 0:
+            message = result["choices"][0]["message"]
+            content = message.get("content", "")
+            reasoning = message.get("reasoning", "")
+
+            # 如果有思维链，则添加特殊标记
+            if reasoning:
+                full_response = f"{content}<think>{reasoning}</think>"
+                return full_response
+            else:
+                return content
+        else:
+            return "API返回结果格式异常，请检查"
+
+    except requests.exceptions.RequestException as e:
+        logging.error(f"调用SiliconFlow API时出错: {str(e)}")
+        return f"调用API时出错: {str(e)}"
+    except json.JSONDecodeError:
+        logging.error("SiliconFlow API返回非JSON响应")
+        return "API响应解析失败"
+    except Exception as e:
+        logging.error(f"调用SiliconFlow API时发生未知错误: {str(e)}")
+        return f"发生未知错误: {str(e)}"
 
 def recursive_retrieval(initial_query, max_iterations=3, enable_web_search=False, model_choice="ollama"):
     """
