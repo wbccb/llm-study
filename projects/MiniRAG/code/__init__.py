@@ -1,4 +1,5 @@
 import socket
+from imp import SEARCH_ERROR
 from logging import exception
 
 import gradio as gr
@@ -18,6 +19,19 @@ import time
 
 from rank_bm25 import BM25Okapi
 import numpy as np
+from dotenv import load_dotenv
+
+import requests
+from requests.adapters import HTTPAdapter
+import hashlib
+
+
+
+# 加载环境变量
+load_dotenv()
+SERPAPI_KEY = os.getenv("SERPAPI_KEY")
+
+SEARCH_ENGINE = "google"  # 可根据需要改为其他搜索引擎
 
 
 # 添加重试次数
@@ -502,7 +516,7 @@ with gr.Blocks(
         # 添加用户问题到历史
         history.append((question, ""))
 
-        # 创建生成器
+        # 根据问题 + 多种逻辑处理，形成对应的答案内容
         resp_generator = stream_answer(question, enable_web_search, model_choice)
 
         # 流式更新回答
@@ -626,7 +640,7 @@ def stream_answer(question, enable_web_search=False, model_choice="ollama", prog
                 return
             logging.error(f"检查知识库时出错: {str(e)}")
 
-    progress(0.3, desc="执行递归检索...")
+         progress(0.3, desc="执行递归检索...")
     # 2.使用递归搜索获取更加全面的答案上下文
 
 
@@ -645,6 +659,100 @@ def stream_answer(question, enable_web_search=False, model_choice="ollama", prog
 
     except Exception as e:
         yield f"系统错误: {str(e)}", "遇到错误"
+
+
+# 检查是否配置了web搜索的相关密钥
+def check_serpapi_key():
+    return SERPAPI_KEY is not None and SERPAPI_KEY.strip() != ""
+
+# 使用 SerpAPI 进行网络工具的使用
+def serpapi_search(query: str, num_results: int = 5):
+    try:
+        params = {
+            "engine": SEARCH_ENGINE,
+            "q": query,
+            "api_key": SERPAPI_KEY,
+            "num": num_results,
+            "hl": "zh-CN",
+            "gl": "cn"
+        }
+        response = requests.get("https://serpapi.com/search", params=params, timeout=15)
+        response.raise_for_status()
+        search_data = response.json()
+        return _parse_serpapi_results(search_data)
+    except Exception as e:
+        logging.error(f"网络搜索失败: {str(e)}")
+        return []
+
+# 解析 SerpAPI 返回的原始数据，整理为统一格式
+def _parse_serpapi_results(data: dict):
+    results = []
+    if "organic_results" in data:
+        for item in data["organic_results"]:
+            result = {
+                "title": item.get("title"),
+                "url": item.get("link"),
+                "snippet": item.get("snippet"),
+                "timestamp": item.get("date"),
+            }
+            results.append(result)
+    ## 返回数据可能存在图谱信息
+    if "knowledge_graph" in data:
+        kg = data["knowledge_graph"]
+        results.insert(0, {
+            "title": kg.get("title"),
+            "url": kg.get("source", {}).get("link", ""),
+            "snippet": kg.get("desciption"),
+            "source": "knowledge_graph"
+        })
+    return results;
+
+def update_web_results(query: str, num_results: int = 5) -> list:
+    results = serpapi_search(query, num_results)
+
+    if not results:
+        return []
+
+    ## 删除旧的数据库数据
+    try:
+        collection_data = COLLECTION.get(include=["metadatas"])
+        total_len = len(collection_data.get("ids"))
+        if collection_data and "metadatas" in collection_data:
+            web_ids = []
+            for i, metadata in enumerate(collection_data.get("metadatas")):
+                if metadata.get("source") == "web" and i < total_len:
+                    # collection_data.get("metadatas")和collection_data.get("ids")得到的数据长度都是一样的
+                    web_ids.append(collection_data.get("ids"))
+
+            ## 删除找到的网络结果
+            if web_ids:
+                COLLECTION.delete(ids=web_ids)
+                logging.info(f"已删除 {len(web_ids)} 条旧的网络搜索结果")
+
+    except Exception as e:
+        logging.warning(f"删除旧的网络搜索结果时出错: {str(e)}")
+
+
+    ## 将results整理后插入到数据库中
+    docs = []
+    metadatas = []
+    ids = []
+    for idx, res in enumerate(results):
+        text = f"标题：{res.get('title', '')}\n 摘要：{res.get('snippet', '')}"
+        docs.append(text)
+
+        meta = {
+            "source": "web",
+            "url": res.get('url', ''),
+            "title": res.get('title', ''),
+            "content_hash": hashlib.md5(text.encode()).hexdigest()[:8]
+        }
+        metadatas.append(meta)
+
+        ids.append(f"web_{idx}")
+    embeddings = EMBED_MODEL.encode(docs)
+    COLLECTION.add(ids=ids, embeddings=embeddings.tolist(), documents=docs, metadatas=metadatas)
+    return results
 
 
 
@@ -670,6 +778,9 @@ def recursive_retrieval(initial_query, max_iterations=3, enable_web_search=False
         logging.info(f"递归检索迭代 {i + 1}/{max_iterations}，当前查询: {query}")
 
         # 如果启动了网络查询，先进行网络搜索
+        web_results = []
+        if enable_web_search and check_serpapi_key():
+            web_results = update_web_results(query);
 
         # query -> embedding
 
