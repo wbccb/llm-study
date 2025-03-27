@@ -1397,6 +1397,64 @@ def evaluate_source_credibility(source):
 
 #########################################
 
+def process_thinking_content(text):
+    """处理包含<think>标签的内容，将其转换为Markdown格式"""
+    # 检查输入是否为有效文本
+    if text is None:
+        return ""
+
+    if not isinstance(text, str):
+        try:
+            process_text = str(text)
+        except:
+            return "无法处理的内容格式"
+    else:
+        process_text = text
+
+    # 处理思维链标签
+    try:
+        while "<think>" in process_text and "</think>" in process_text:
+            start_idx = process_text.find("<think>")
+            end_idx = process_text.find("</think>")
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                thinking_content = process_text[start_idx + 7:end_idx]
+                before_think = process_text[:start_idx]
+                after_think = process_text[end_idx + 8:]
+
+                # 使用可折叠详情框展示思维链
+                processed_text = before_think + "\n\n<details>\n<summary>思考过程（点击展开）</summary>\n\n" + thinking_content + + "\n\n</details>\n\n" + after_think
+
+        processed_html = []
+        i = 0
+        while i < len(process_text):
+            if processed_text[i:i + 8] == "<details" or processed_text[i:i + 9] == "</details" or \
+                    processed_text[i:i + 8] == "<summary" or processed_text[i:i + 9] == "</summary":
+                # 保留这些标签
+                tag_end = processed_text.find(">", i)
+                if tag_end != -1:
+                    processed_html.append(processed_text[i:tag_end + 1])
+                    i = tag_end + 1
+                    continue
+
+            if processed_text[i] == "<":
+                processed_html.append("&lt;")
+            elif processed_text[i] == ">":
+                processed_html.append("&gt;")
+            else:
+                processed_html.append(processed_text[i])
+            i += 1
+
+        processed_text = "".join(processed_html)
+    except Exception as e:
+        logging.error(f"处理思维链内容时出错: {str(e)}")
+        # 出错时至少返回原始文本，但确保安全处理HTML标签
+        try:
+            return text.replace("<", "&lt;").replace(">", "&gt;")
+        except:
+            return "处理内容时出错"
+
+    return processed_text
+
 
 # 文件状态处理管理类
 class FileProcessor:
