@@ -832,7 +832,11 @@ def evaluate_source_credibility(source):
     return 0.5  # 默认中等可信度
 
 #########################################
-
+"""
+1. 标签解析(<THINK></THINK>)
+2. Markdown折叠展示
+3. HTML安全转义
+"""
 def process_thinking_content(text):
     """处理包含<think>标签的内容，将其转换为Markdown格式"""
     # 检查输入是否为有效文本
