@@ -649,9 +649,14 @@ def stream_answer(question, enable_web_search=False, model_choice="ollama", prog
                 return
             logging.error(f"检查知识库时出错: {str(e)}")
 
-         progress(0.3, desc="执行递归检索...")
+        progress(0.3, desc="执行递归检索...")
     # 2.使用递归搜索获取更加全面的答案上下文
-
+        all_contexts, all_doc_ids, all_metadata = recursive_retrieval(
+            initial_query=question,
+            max_iterations=3,
+            enable_web_search=enable_web_search,
+            model_choice=model_choice,
+        )
 
     # 3.组合上下文，包括来源信息
     ## 使用检索到的数据
@@ -1302,6 +1307,33 @@ class BM25IndexManager:
         return True
 
     def search(self, query, top_k=5):
+        """使用BM25检索相关文档"""
+        if not self.bm25_index:
+            return []
+
+        # 对查询进行分词
+        tokenized_query = list(jieba.cut(query))
+
+        # 获取BM25得分
+        bm25_scores = self.bm25_index.get_scores(tokenized_query)
+
+        # 获取得分最高的文档索引
+        ## np.argsort(bm25_scores): 对BM25分数数组进行升序排序，返回排序后的索引数组
+        ## [-top_k]: 从排序结果的末尾取top_k个元素（即取最大的top_k个值的索引）
+        ## [::-1]: 反转数组顺序，实现降序排列
+        top_indices = np.argsort(bm25_scores)[-top_k:][::-1]
+
+        # 返回结果
+        results = []
+        for idx in top_indices:
+            if bm25_scores[idx] > 0: # 小于0代表没有相关性
+                results.append({
+                    "id": self.doc_mapping[idx],
+                    "score": float(bm25_scores[idx]),
+                    "content": self.raw_corpus[idx],
+                })
+        return results
+
 
     def clear(self):
         self.bm25_index = None
