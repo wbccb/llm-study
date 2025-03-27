@@ -643,6 +643,7 @@ def stream_answer(question, enable_web_search=False, model_choice="ollama", prog
                     return
                 else:
                     logging.warning("知识库为空，将仅使用网络搜索结果")
+
         except Exception as e:
             if not enable_web_search:
                 yield f"⚠️ 检查知识库时出错: {str(e)}，请确保已上传文档。", "遇到错误"
@@ -657,19 +658,111 @@ def stream_answer(question, enable_web_search=False, model_choice="ollama", prog
             enable_web_search=enable_web_search,
             model_choice=model_choice,
         )
+        context_with_sources = []
+        sources_for_conflict_detection = []
+        for doc, doc_id, metadata in zip(all_contexts, all_doc_ids, all_metadata):
+            source_type = metadata.get("source", "本地文档")
+            source_item = {
+                "text": doc,
+                "type": source_type
+            }
+            if source_type == "web":
+                url = metadata.get("url", "未知URL")
+                title = metadata.get("title", "未知标题")
+                context_with_sources.append(f"[网络来源: {title}] (URL: {url})\n{doc}")
+                source_item["url"] = url
+                source_item["title"] = title
+            else:
+                source = metadata.get("source", "未知来源")
+                context_with_sources.append(f"[本地文档: {source}]\n{doc}")
+                source_item["source"] = source
 
-    # 3.组合上下文，包括来源信息
-    ## 使用检索到的数据
+        sources_for_conflict_detection.append(source_item)
+    # 3.矛盾检测（关键事实比对）
     ## 检测搜索的结构是否存在矛盾，也就是有的数据说1+1=2；有的说1+1=3
     ## 如果存在矛盾，则进行数据
+        have_conflict = detect_conflicts(sources_for_conflict_detection)
+        if have_conflict:
+            credible_sources = [s for s in sources_for_conflict_detection
+                                if s["type"] == "web" and evaluate_source_credibility(s) > 0.7]
+
+        # 组装上下文
+        context = "\n\n".join(context_with_sources)
 
     ## 上下文添加query时间敏感检测
+        time_sensitive = any(word in question for word in ["最新", "今年", "当前", "最近", "刚刚"])
+
     ## 改进提示词模板，提高回答质量
+        prompt_template = """作为一个专业的问答助手，你需要基于以下{context_type}回答用户问题。
+
+    提供的参考内容：
+    {context}
+
+    用户问题：{question}
+
+    请遵循以下回答原则：
+    1. 仅基于提供的参考内容回答问题，不要使用你自己的知识
+    2. 如果参考内容中没有足够信息，请坦诚告知你无法回答
+    3. 回答应该全面、准确、有条理，并使用适当的段落和结构
+    4. 请用中文回答
+    5. 在回答末尾标注信息来源{time_instruction}{conflict_instruction}
+    6. 参考比较可信的来源数据{credible_sources}
+
+    请现在开始回答："""
+        prompt = prompt_template.format(
+        context_type="本地文档和网络搜索结果" if enable_web_search else "本地文档",
+        context=context,
+        question=question,
+        time_instruction="，优先使用最新的信息" if time_sensitive and enable_web_search else "",
+        conflict_instruction="，并明确指出不同来源的差异" if have_conflict else "",
+        credible_sources=credible_sources if have_conflict else ":暂无"
+    )
+
+        progress(0.7, desc="生成回答...")
+        full_answer = ""
 
     # 4.根据本地模型还是线上模式进行不同API的选择
     # 5.检测答案是否包含thinking，构建思考链数据展示
+        if model_choice == "siliconflow":
+            # 对于SiliconFlow API，不支持流式响应，所以一次性获取
+            progress(0.8, desc="通过SiliconFlow API生成回答...")
+            full_answer = call_siliconflow_api(prompt, temperature=0.7, max_tokens=1536)
 
-    # 6.输出最终答案=>显示在界面上
+            # 处理思维链
+            if "<think>" in full_answer and "</think>" in full_answer:
+                processed_answer = process_thinking_content(full_answer)
+            else:
+                processed_answer = full_answer
+
+            yield processed_answer, "完成!"
+        else:
+            # 使用本地Ollama模型的流式响应
+            response = session.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model": "deepseek-r1:1.5b",
+                    "prompt": prompt,
+                    "stream": True
+                },
+                timeout=120,
+                stream=True
+            )
+            for line in response.iter_lines():
+                if line:
+                    chunk = json.loads(line.decode()).get("response", "")
+                    full_answer += chunk
+
+                    # 检查是否有完整的思维链标签可以处理
+                    if "<think>" in full_answer and "</think>" in full_answer:
+                        processed_answer = process_thinking_content(full_answer)
+                    else:
+                        processed_answer = full_answer
+
+                    yield processed_answer, "生成答案中..."
+
+            final_answer = process_thinking_content(processed_answer)
+
+            yield final_answer, "完成!"
 
     except Exception as e:
         yield f"系统错误: {str(e)}", "遇到错误"
@@ -1246,6 +1339,63 @@ def recursive_retrieval(initial_query, max_iterations=3, enable_web_search=False
             break
 
     return all_contexts, all_doc_ids, all_metadata
+
+
+#########################################
+# 矛盾检测函数，如果有矛盾的地方，则返回true，否则返回false，注意！下面只是一个示例，实际并不是如此简单
+def detect_conflicts(sources):
+    """精准矛盾检测算法"""
+    key_facts = {}
+    for item in sources:
+        facts = extract_facts(item["text"] if "text" in item else item.get("excerpt", ""))
+        for fact, value in facts.items():
+            if fact in key_facts:
+                if key_facts[fact] != value:
+                    return True
+            else:
+                key_facts[fact] = value
+    return False
+
+# 矛盾检测函数-从文本提取关键事实（注意！下面只是一个示例，实际并不是如此简单）
+def extract_facts(text):
+    """从文本提取关键事实（示例逻辑）"""
+    facts = {}
+    # 提取数值型事实
+    numbers = re.findall(r'\b\d{4}年|\b\d+%', text)
+    if numbers:
+        facts['关键数值'] = numbers
+    # 提取技术术语
+    if "产业图谱" in text:
+        facts['技术方法'] = list(set(re.findall(r'[A-Za-z]+模型|[A-Z]{2,}算法', text)))
+    return facts
+
+# 评估来源可信度
+def evaluate_source_credibility(source):
+    """评估来源可信度"""
+    credibility_scores = {
+        "gov.cn": 0.9,
+        "edu.cn": 0.8,
+        "weixin": 0.7,
+        "zhihu": 0.6,
+        "baidu": 0.5
+    }
+    url = source.get("url", "")
+    if not url:
+        return 0.5 # 默认中等可信度
+
+    domain_match = re.search(r'//([^/]+)', url)
+    if not domain_match:
+        return 0.5
+
+    # 检查是否匹配上面列举的域名
+    domain = domain_match.group(1)
+    for known_domain, score in credibility_scores.items():
+        if known_domain in domain:
+            return score
+
+    return 0.5  # 默认中等可信度
+
+#########################################
 
 
 # 文件状态处理管理类
