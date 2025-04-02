@@ -82,6 +82,14 @@ export default defineConfig({
         text: "知识库",
         items: [
           {text: "NLP+大模型=>问答", link: "docs/知识库/NLP+大模型=>问答.md"},
+          {
+            text: "RAGFlow源码分析", items: [
+              {
+                text: "文件上传&解析整体流程",
+                link: "docs/知识库/RAG/RAGFlow源码分析/文档预处理阶段/文件上传&解析整体流程.md",
+              },
+            ]
+          },
         ],
       },
     ],
