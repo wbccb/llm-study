@@ -2,6 +2,7 @@ import {defineConfig} from "vitepress";
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
+  srcDir: "docs",
   base: "/llm-study/",
   title: "大模型相关学习电子书",
   description: "",
