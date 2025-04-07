@@ -89,6 +89,10 @@ export default defineConfig({
                 text: "文件上传&解析整体流程",
                 link: "docs/知识库/RAG/RAGFlow源码分析/文档预处理阶段/文件上传&解析整体流程.md",
               },
+              {
+                text: "混合检索策略",
+                link: "docs/知识库/RAG/RAGFlow源码分析/检索阶段/混合检索策略.md",
+              },
             ]
           },
         ],
