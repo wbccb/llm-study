@@ -8,9 +8,9 @@ hero:
   actions:
     - theme: brand
       text: 点击进入python电子书
-      link: /docs/python/1.基础知识
+      link: /python/1.基础知识
     - theme: alt
       text: 点击进入深度学习电子书
-      link: /docs/深度学习/李宏毅/2023年&2024年/1.chatGPT.md
+      link: /深度学习/李宏毅/2023年&2024年/1.chatGPT.md
 ---
 
