@@ -91,7 +91,17 @@ export default defineConfig({
               },
               {
                 text: "混合检索策略",
-                link: "/知识库/RAG/RAGFlow源码分析/检索阶段/混合检索策略.md",
+                items: [
+                  {
+                    text: "混合检索策略",
+                    link: "/知识库/RAG/RAGFlow源码分析/检索阶段/(WIP)混合检索策略.md",
+                  },
+                  {
+                    text: "知识图谱增强检索",
+                    link: "/知识库/RAG/RAGFlow源码分析/检索阶段/知识图谱增强检索实现分析.md",
+                  },
+                ]
+
               },
             ]
           },
