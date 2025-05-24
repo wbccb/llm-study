@@ -25,7 +25,7 @@
 ## 知识库
 
 - [miniRAG](https://github.com/wbccb/llm-study/tree/main/projects/MiniRAG)
-- RAGFlow源码分析
+- [RAGFlow源码分析](https://github.com/wbccb/llm-study/tree/main/docs/%E7%9F%A5%E8%AF%86%E5%BA%93/RAG/RAGFlow%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90)
 
 ### RAGFlow源码分析
 - 文件上传&解析整体流程
