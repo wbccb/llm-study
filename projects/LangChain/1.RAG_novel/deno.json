@@ -1,0 +1,31 @@
+{
+  "imports": {
+    "lodash": "npm:/lodash@4.17.21",
+    "dotenv": "https://cdn.jsdelivr.net/gh/denoland/std@0.220.0/dotenv/mod.ts",
+    "langchain": "npm:/langchain@0.1.29",
+    "langchain/": "npm:/langchain@0.1.29/",
+    "@langchain/openai": "npm:/@langchain/openai@0.0.22",
+    "@langchain/openai/": "npm:/@langchain/openai@0.0.22/",
+    "@langchain/core": "npm:/@langchain/core@0.1.48",
+    "@langchain/core/": "npm:/@langchain/core@0.1.48/",
+    "zod": "npm:/zod@3.22.4",
+    "pdf-parse": "npm:/pdf-parse@0.11.0/lib/pdf-parse.js",
+    "ignore": "npm:/ignore@5.3.1",
+    "cheerio": "npm:/cheerio@1.0.0-rc.12",
+    "vectordb": "npm:/vectordb@0.3.0",
+    "@lancedb/lancedb": "npm:/@lancedb/lancedb@0.5.0",
+    "@langchain/community/": "npm:/@langchain/community@0.0.40/",
+    "faiss-node": "npm:/faiss-node@0.10.0",
+    "openai": "npm:/openai@4.28.1",
+    "zod-to-json-schema": "npm:/zod-to-json-schema@3.22.3"
+  },
+  "deno": {
+    "enable": true,
+    "unstable": true,
+    "suggest": {
+      "autoImports": true,
+      "names": true,
+      "paths": true
+    }
+  }
+}
