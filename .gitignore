@@ -49,3 +49,5 @@ TODO可能要注意的问题.md
 .ipynb_checkpoints
 
 langchain_env
+
+pnpm-lock.yaml
